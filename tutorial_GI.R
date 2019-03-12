@@ -1,0 +1,250 @@
+# ---
+#   title: "Gradient Forest Tutorial"
+# subtitle: "ConGen2018"
+# author: "Christen Bossu and Rachael Bay"
+# date: "September 13, 2018"
+# output:
+#   html_document: default
+# pdf_document: default
+# word_document: default
+# pdf_document: default
+# ---
+#   
+  ### 1. Motivation
+  
+  # The R package gradientForest utilizes a flexible non-parametric functions to quantify multi-species compositional turnover along environmental gradients. In the era of next-generation sequencing, where genome-wide data is common, we can extend this to determine which variants are associated with specific environmental variables. So rather than thinking of the large-scale species turnover in space, we can map fine-scale allele-frequency changes along environemntal gradients. 
+
+# Below is code for quantifying and visualizing intraspecific gene-environment variation across space. As part of The Bird Genoscape Project, we compare present-day gene-environment associations to predicted future changes to identify regions of genomic vulnerability. For now, this tutorial focuses on analyzing and plotting the allelic variation as estimated from gradient forest for a single species, the Willow Flycatcher, but is easily adpated to include other species and methods for esimating variation.
+
+# ```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo=FALSE, message = FALSE, warning = FALSE, results = 'hide')
+# ```
+
+# We will need the following R packages. gradientForest requires the dependancy extendedForest, an R package classification and regression based on forest trees using random inputs. To install extendedForest, it is easiest to download the tar.gz file from "https://r-forge.r-project.org/R/?group_id=973". Decompress the tar.gz file in your terminal,
+
+# ```
+# tar -xzvf extendedForest_1.6.1.tar.gz
+# ```
+
+# and install and load the following packages in Rstudio.
+
+# ```
+source("/home/thiagoms/WIFL_rad/extendedForest")
+# install.packages("gradientForest", repos="http://R-Forge.R-project.org")
+# install.packages("raster")
+# install.packages("gstat")
+# install.packages("rgdal")
+# install.packages("RColorBrewer")
+# install.packages("rasterVis")
+# install.packages("tidyverse")
+library(extendedForest)
+library(gradientForest)
+library(raster)
+library(gstat)
+library(rgdal)
+library(RColorBrewer)
+library(rasterVis)
+library(tidyverse)
+# ```
+
+
+wifl_shape=readOGR(dsn = path.expand("/home/thiagoms/genomic vulnerability subset and scripts/WIFL/"), layer = "WIFLrev")
+proj4string(wifl_shape)=CRS("+proj=longlat +datum=WGS84")
+par(mar=c(0,0,0,0))
+plot(wifl_shape)
+
+
+### 2. Running Gradient Forest
+# We will use gradient forest to test whether a subset of genomic variation can be explained by environmental variables and to visualize climate-associated genetic variation across the breeding range of the Willow Flycatcher. To run gradient forest we need two main files. First we need the environmental data/climate variables associated with each population. Populations are defined by their latitude and longitude. 
+
+# Note to those interested in collecting environmental variables for their own species. 
+# For each sampling location, we obtained environmental data from publically available databases. Specifically, we chose variables with known impacts on bird physiology and ecology and that were publically available at high resolution. These variables, included as a table in our BOX folder, included 19 climate variables downloaded from WorldClim (Hijmans et al. 2005) as well as vegetation indices (Carroll et al. 2004) (NDVI and NDVIstd), Tree Cover (Sexton et al. 2013) and elevation data from the Global Land Cover Facility (http://www.landcover.org). We also downloaded and used a measure of surface moisture characteristics from the NASA Scatterometer Climate Record Pathfinder project (QuickSCAT, downloaded from scp.byu.edu).
+# 
+# Read in the environmental variables, and take a look at the dimensions and the actual data.
+# 
+# ```
+Ewifl<-read_csv('/home/thiagoms/genomic vulnerability subset and scripts/wiflforest.env.csv')
+dim(Ewifl)
+head(Ewifl)
+# ```
+
+# Second, we have genomic data formatted as allele frequencies for each population in the same order. The published Willow Flycatcher data includes 37855 variants, and is too large to run a gradient forest analyses within the time frame of a tutorial, so we are supplying a subsetted dataset limited to 10,000 SNPs. 
+# 
+# ```
+Gwifl<-read_csv('/home/thiagoms/WIFL_rad/subset_complete_21')
+dim(Gwifl)
+head(Gwifl)
+# ```
+
+# Next we have some housekeeping to define the predictor variables in the regression, which are the environmental variables, and the response variables, which in this case are the frequencies of each variant, analyzed in gradient forest.
+# 
+# ```
+preds <- colnames(Ewifl)
+specs <- colnames(Gwifl)
+
+nSites <- dim(Gwifl)[1]
+nSpecs <- dim(Gwifl)[2]
+# set depth of conditional permutation
+lev <- floor(log2(nSites*0.368/2))
+lev
+# ```
+# Now we run gradientForest with 10 bootstrapped trees to be generated by randomForest. This will take 2 -5 minutes.
+# 
+# ```
+wiflforest=gradientForest(cbind(Ewifl,Gwifl), predictor.vars=preds, response.vars=specs, ntree=10, transform = NULL, compact=T,nbin=101, maxLevel=1,trace=T)
+# ```
+
+# Now we can observe which environmental variables are significantly associated with the allelic structure of Willow Flycatchers.
+# ```
+allpredictors=names(importance(wiflforest))
+plot.gradientForest(wiflforest,plot.type="O")
+# ```
+
+### 3. Basic Gradient Forest Preparation
+
+# So now that you see how gradient forest is run, let's plot the results in space.
+
+# Load your 100,000 random points with associated environmental predictors. This can be created with another script that was included with the tutorial material (bioclim&randoms.R), but we'll use the ready-made grid created specifically for Willow Flycatchers.
+# ```
+birdgrid=read.table("/home/thiagoms/genomic vulnerability subset and scripts/wiflcurrentRH.csv",header=T,sep=",") %>% filter(BIO4!="-9999")
+birdgrid
+
+# We don't have to use all the predictors in the next steps, in this case, we'll use the top 4 uncorrelated variables. These variables were selected by moving down the list of ranked importance for the full model and discarding variables highly correlated (Pearson’s r > 0.7) with a variable of higher importance. You can see the correlations among environmental variables across your sample sites.
+# 
+# ```
+cor(Ewifl,method="pearson")
+
+# For the remaining time in this tutorial we are focusing on the uncorrelated variables determined for the full Willow Flycatcher dataset (Ruegg et al. 2017), BIO11 (Mean temperature of coldest quarter), BIO5 (Max temperature of warmest month), BIO4 (Temperature seasonality (standard deviation *100)), and BIO17 (Precipitation of driest quarter).
+# 
+# ```
+predictors_uncor<-c("BIO11","BIO5","BIO4" ,"BIO17")
+# ```
+
+# Predict across your random sites using your Forest model:
+# 
+# ```
+currentgrid=cbind(birdgrid[,c("X","Y")], predict.gradientForest(wiflforest,birdgrid[,predictors_uncor]))
+currentgrid
+
+# We can summarize the variation using principal components. We then convert those PC axes to RGB values for plotting.
+# 
+# ```
+PCs=prcomp(currentgrid[,3:6]) #run your PCs on your top four uncorrelated variables
+a1 <- PCs$x[,1]
+a2 <- PCs$x[,2]
+a3 <- PCs$x[,3]
+r <- a1+a2
+g <- -a2
+b <- a3+a2-a1
+r <- (r-min(r)) / (max(r)-min(r)) * 255
+g <- (g-min(g)) / (max(g)-min(g)) * 255
+b <- (b-min(b)) / (max(b)-min(b)) * 255
+wiflcols=rgb(r,g,b,max=255)
+wiflcols2=col2rgb(wiflcols)
+wiflcols3=t(wiflcols2)
+gradients=cbind(currentgrid[c("X","Y")],wiflcols3)
+# ```
+
+# The multi-dimensional biological space can be plotted by taking the principle component of the transformted grid and presenting the first two dimensions in a biplot. You've already defined the PCs above and the RGB color palette. Different coordinate positions in the biplot represent differing allele frequency compositions as associated with the predictors.
+# 
+# ```
+nvs <- dim(PCs$rotation)[1]
+vec <- c("BIO11","BIO5","BIO4" ,"BIO17")
+lv <- length(vec)
+vind <- rownames(PCs$rotation) %in% vec
+scal <- 50
+xrng <- range(PCs$x[, 1], PCs$rotation[, 1]/scal) *1.1
+yrng <- range(PCs$x[, 2], PCs$rotation[, 2]/scal) *.3
+plot((PCs$x[, 1:2]), xlim = xrng, ylim = yrng, pch = ".", cex = 4, col = rgb(r, g, b, max = 255), asp = 1)
+points(PCs$rotation[!vind, 1:2]/scal, pch = "+")
+arrows(rep(0, lv), rep(0, lv), PCs$rotation[vec,1]/scal, PCs$rotation[vec, 2]/scal, length = 0.0625)
+jit <- 0.0015
+text(PCs$rotation[vec, 1]/scal + jit * sign(PCs$rotation[vec,1]), PCs$rotation[vec, 2]/scal + jit * sign(PCs$rotation[vec,2]), labels = vec)
+# ```
+
+# With this, we can draw our first gradient forest map:
+# 
+# ```
+
+wiflcols=rgb(r,g,b,max=255)
+wiflcols2=col2rgb(wiflcols)
+wiflcols3=t(wiflcols2)
+gradients=cbind(currentgrid[c("X","Y")],wiflcols3)
+wiflmap=gradients
+coordinates(wiflmap)=~X+Y #setting the coordinates
+proj4string(wiflmap) <- CRS("+proj=longlat +datum=WGS84")
+# ```
+# 
+# ```{r, fig.cap = "Our gradient forest model of SNP variation in the Willow Flycatcher breeding range"}
+par(mar=c(0,0,0,0))
+plot(wiflmap,col=rgb(r,g,b,max=255),pch=15)
+lines(wifl_shape)
+# ```
+
+### 4. Defining "Genomic Vulnerability" Given Future Climate Predictions 
+
+# The plots above are the genotype-environment relationship given present-day climate rasters. However, we know rapid fluctuations in temperature and precipitation associated with climate change can alter the suitability of particular regions making it necessary for individuals to either adapt, disperse or die if the changes are extreme enough. Those species that possess standing genetic variation for climate-related traits (i.e. have adaptive capacity) are most likely to have the ability to adapt to rapidly changing environments. Those species that unable to adapt are deemed most vulneraable.
+# 
+# To investigate which populations might be most vulnerable to future climate change, we defined the metric “genomic vulnerability” as the mismatch between current and predicted future genomic variation based on genotype-environment relationships modeled across contemporary populations. We followed the method presented in Fitzpatrick and Keller (2015) to calculate genomic vulnerability using an extension of the gradient forest analysis. Populations with the greatest mismatch are least likely to adapt quickly enough to track future climate shifts, potentially resulting in population declines or extirpations.
+# 
+# Here, we read in the future climate predictions for each random point. Since different amounts of heat-trapping gases released into the atmosphere by human activities produce different projected increases in Earth’s temperature, we provided two such predicted models: the 2.6 emission predictions and the 8.5 emission predictions for the year 2050. 
+# 
+# The lowest recent emissions pathway (RCP), 2.6, assumes immediate and rapid reductions in emissions and would result in about 2.5°F of warming in this century. The highest emissions pathway, RCP 8.5, roughly similar to a continuation of the current path of global emissions increases, is projected to lead to more than 8°F warming by 2100, with a high-end possibility of more than 11°F. Each of these is a composite of multiple prediction models and have rather different predictions.
+# 
+# ```
+
+future1<-read.table("/home/thiagoms/genomic vulnerability subset and scripts/wiflfuture2-6-2050.csv",header=T,sep=",") %>% filter(BIO4!="-9999")
+head(future1)
+future2<-read.table("/home/thiagoms/genomic vulnerability subset and scripts/wiflfuture8-5-2050.csv",header=T,sep=",") %>% filter(BIO4!="-9999")
+head(future2)
+
+# We then use our gradient forest model to transform these into "biological space" just as we did for random points across contemporary environments.
+# 
+# ```
+
+futuregrid=cbind(future1[,c("X","Y")],predict.gradientForest(wiflforest,future1[,predictors_uncor]))
+
+# Finally, we calculate genomic vulnerability. Mathematically, for a given point this is the Euclidean distance between the current biological space (currentgrid) and the future biological space (futuregrid):
+# 
+# ```
+
+# ```{r}
+coords<-birdgrid[,c("X","Y")]
+euc <- matrix(data=NA,nrow=nrow(futuregrid),ncol=3)
+for(j in 1:nrow(currentgrid)) {
+euc[j,] <- c(as.numeric(coords[j,]),as.numeric(dist(rbind(currentgrid[j,],futuregrid[j,]))))
+}
+euc <- data.frame(euc)
+names(euc) <- c("Long","Lat","Vulnerability")
+# ```
+
+# This again takes a moment. Once we have this metric, we can easily map genomic vulnerability across the range:
+# ```
+
+# ```{r, fig.cap = "Heat map of genomic vulnerability under the 2050 2.6 emission future prediction"}
+colramp=heat.colors(15)[as.numeric(cut(log(euc[,3]),breaks=15))]
+plot(euc$Long,euc$Lat,pch=".",cex=3,col=colramp, xlab="Longitude",ylab="Latitude")
+lines(wifl_shape)
+# ```
+
+# How does this look if we plot the second scenario of higher gas emissions? Compare your resulting plot to my plot below. Keep in mind that the colors are scaled within each scenario.
+
+# ```{r}
+futuregrid2=cbind(future2[,c("X","Y")],predict.gradientForest(wiflforest,future2[,predictors_uncor]))
+
+coords<-birdgrid[,c("X","Y")]
+euc2 <- matrix(data=NA,nrow=nrow(futuregrid2),ncol=3)
+for(j in 1:nrow(currentgrid)) {
+euc2[j,] <- c(as.numeric(coords[j,]),as.numeric(dist(rbind(currentgrid[j,],futuregrid2[j,]))))
+}
+euc2 <- data.frame(euc2)
+names(euc2) <- c("Long","Lat","Vulnerability")
+# ```
+# 
+# ```{r, fig.cap = "Heat map of genomic vulnerability under the 2050 8.5 emission future prediction"}
+colramp=heat.colors(15)[as.numeric(cut(log(euc2[,3]),breaks=15))]
+plot(euc2$Long,euc2$Lat,pch=".",cex=3,col=colramp, xlab="Longitude",ylab="Latitude")
+lines(wifl_shape)
+# ```
+                                                         
+                                                         
