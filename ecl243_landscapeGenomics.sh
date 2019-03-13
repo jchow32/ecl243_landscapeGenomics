@@ -81,7 +81,27 @@ for i in {1..24}; do cat "subset_${i}_row" >> subset_all_rows; done
 
 # run gradient Forest for 24 populations using 20 ClimWorld variables
 
-###### !!!!INSERT HOW DOWNLOADED CLIMWORLD VARIABLES!!!! ######
+R
+
+library(raster)
+library(sp)
+
+r <- getData("worldclim",var="bio")
+
+r <- r[[c(1:20)]]
+names(r) <- c("Bio1", "Bio2", "Bio3", "Bio4", "Bio5", "Bio6", "Bio7", "Bio8", "Bio9", "Bio10", "Bio11", "Bio12", "Bio13", "Bio14", "Bio15", "Bio16", "Bio17", "Bio18", "Bio19", "Bio20")
+
+meta <- as.data.frame("metadatafile") # need name of metadata file
+
+coords <- data.frame(x=meta[1,], y=meta[2,]) # need columns of lat and long
+
+points <- SpatialPoints(coords, proj4string = r@crs)
+
+values <- extract(r,points)
+
+df <- cbind.data.frame(coordinates(points),values)
+
+write.csv(x = df, file = "WIFL_Bio.csv")
 
 sbatch gradientForestTutorial.sh
 
