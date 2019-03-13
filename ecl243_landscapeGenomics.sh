@@ -91,9 +91,9 @@ r <- getData("worldclim",var="bio")
 r <- r[[c(1:20)]]
 names(r) <- c("Bio1", "Bio2", "Bio3", "Bio4", "Bio5", "Bio6", "Bio7", "Bio8", "Bio9", "Bio10", "Bio11", "Bio12", "Bio13", "Bio14", "Bio15", "Bio16", "Bio17", "Bio18", "Bio19", "Bio20")
 
-meta <- as.data.frame("metadatafile") # need name of metadata file
+meta <- as.data.frame("WIFL_175inds_meta.txt") 
 
-coords <- data.frame(x=meta[1,], y=meta[2,]) # need columns of lat and long
+coords <- data.frame(x=meta[,6], y=meta[,5]) 
 
 points <- SpatialPoints(coords, proj4string = r@crs)
 
