@@ -112,7 +112,7 @@ sbatch gradientForestTutorial.sh
 # Get genotype matrix for individuals, where in 0/0 in VCF means homozygous for major allele, 0/1 heterozygous, 1/1 homozygous alternate. Individuals (columns), variants (rows)
 cut -d$'\t' -f10- WIFL_final.vcf | grep -v "##" | sed 's/:[0-9]*,[0-9]*:[0-9]*:[0-9]*:[0-9]*,[0-9]*,[0-9]*//g' | sed 's/0\/0/0/g' | sed 's/1\/0/1/g' | sed 's/1\/1/2/g' | sed 's/0\/1/1/g' | sed 's/\.\/\.:\.:\.:\.:\./9/g' | sed 's/\.\/\./9/g' > genotypes_individuals_vcf
 
-###### !!!!INSERT HOW TRANSPOSED genotypes_individuals_vcf!!!! ######
+# see corresponding python notebook for resulting manhattan plots
 
 # remove individual who do not belong to any population, take only the fields containing genotype information
 grep -v 1590-97279 transposed_VCF_WIFL | grep -v 1590-97493 | grep -v 1710-20525 | grep -v 1710-20526 | cut -f2- | tail -n+2 > cut_transposed_VCF_WIFL_input
